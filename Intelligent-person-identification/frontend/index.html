@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Surveillance Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>AI Surveillance Control Center</h1>
+    </div>
+
+    <div class="dashboard">
+        <!-- Main Video Canvas -->
+        <div class="panel main-panel">
+            <div class="controls">
+                <input type="file" id="videoInput" accept="video/*">
+                <button id="uploadBtn">Upload CCTV Stream</button>
+            </div>
+            <div class="video-container">
+                <img id="streamViewer" src="/api/stream" alt="CCTV Stream Loading...">
+            </div>
+        </div>
+
+        <!-- Sidebar Tools -->
+        <div class="panel side-panel">
+            <h3>Attribute AI Search</h3>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="e.g. white shirt or black mask">
+                <button id="searchBtn">Search</button>
+            </div>
+            <div id="searchResults" class="results-container"></div>
+
+            <hr>
+
+            <h3>Custom Blacklist Rules</h3>
+            <div class="blacklist-config">
+                <label><input type="checkbox" id="chkMask" checked> Face Mask</label><br>
+                <label><input type="checkbox" id="chkTattoo"> Tattoo</label><br>
+                <label><input type="checkbox" id="chkBag"> Carried Bag</label><br>
+                <label><input type="checkbox" id="chkGlasses"> Glasses</label><br>
+                <button id="updateRulesBtn" style="margin-top: 8px;">Apply Alert Rules</button>
+            </div>
+
+            <hr>
+
+            <h3>Threat Alerts</h3>
+            <div id="alertBox" class="alert-container"></div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>

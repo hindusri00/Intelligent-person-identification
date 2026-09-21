@@ -97,15 +97,25 @@ class AttributeAnalyzer:
 
         # 1. Head & Hair Slices (Top 20%)
         head_region = person_crop[0:int(h * 0.20), :]
-        hair_slice = person_crop[0:int(h * 0.08), :]
+        hair_slice = person_crop[
+            int(h * 0.02):int(h * 0.14),
+            int(w * 0.25):int(w * 0.75)
+        ]
 
         # 2. Chest-Centered Shirt Crop (18% to 42% height, center 50% width)
         # Prevents long hair and counter/desk occlusions from corrupting shirt color
         shirt_crop = person_crop[int(h * 0.18):int(h * 0.42), int(w * 0.25):int(w * 0.75)]
 
         # 3. Lower Body & Feet Slices
-        lower_region = person_crop[int(h * 0.45):int(h * 0.80), :]
-        feet_region = person_crop[int(h * 0.82):h, :]
+        lower_region = person_crop[
+            int(h * 0.45):int(h * 0.80),
+            int(w * 0.20):int(w * 0.80)
+        ]
+
+        feet_region = person_crop[
+            int(h * 0.82):h,
+            int(w * 0.15):int(w * 0.85)
+        ]
 
         head_info = self.analyze_head_region(head_region)
         body_marks = self.analyze_wrists_and_tattoos(person_crop)

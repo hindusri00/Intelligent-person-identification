@@ -3,7 +3,7 @@ import cv2
 from flask import Flask, Response, request, jsonify, send_from_directory
 from flask_cors import CORS
 from modules.tracking_module import RealTimeTracker
-
+import numpy as np
 app = Flask(__name__, static_folder='frontend', template_folder='frontend')
 CORS(app)
 
@@ -12,6 +12,9 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 tracker_system = RealTimeTracker(model_path="yolo11n.pt")
 detection_logs = []
+
+target_embedding = None
+target_person_id = "Target"
 
 # Configurable User Blacklist Rules
 active_blacklist = {
@@ -40,25 +43,121 @@ def manage_blacklist():
         return jsonify({"status": "updated", "blacklist": active_blacklist})
     return jsonify({"blacklist": active_blacklist})
 
+@app.route('/api/target', methods=['POST'])
+def set_target():
+    global target_embedding
+
+    if 'image' not in request.files:
+        return jsonify({"error": "No target image uploaded"}), 400
+
+    file = request.files['image']
+
+    if file.filename == '':
+        return jsonify({"error": "No target image selected"}), 400
+
+    image_bytes = np.frombuffer(file.read(), np.uint8)
+    image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+
+    if image is None:
+        return jsonify({"error": "Invalid image"}), 400
+
+    embedding = tracker_system.reid.extract_embedding(image)
+
+    if embedding is None:
+        return jsonify({"error": "Could not extract target features"}), 400
+
+    target_embedding = embedding
+    tracker_system.set_target(embedding)
+
+    return jsonify({
+        "status": "success",
+        "target_id": target_person_id
+    })
 # --- FLEXIBLE NATURAL LANGUAGE SEARCH ---
 @app.route('/api/search', methods=['POST'])
 def search_person():
-    raw_query = request.json.get('query', '').lower()
-    
-    # Filter out natural language filler words
-    stop_words = {"person", "people", "man", "woman", "guy", "with", "wearing", "a", "in", "and", "the", "carrying", "shirt", "pant", "color"}
-    query_tokens = [word for word in raw_query.split() if word not in stop_words]
-    
+    raw_query = request.json.get('query', '').lower().strip()
+
     matches = []
-    
+
+    # Detect requested attribute from the query
+    attribute_map = {
+        "shirt": "shirt_color",
+        "pant": "pant_color",
+        "pants": "pant_color",
+        "hair": "hair_color",
+        "mask": "mask",
+        "bag": "accessory",
+        "glasses": "spectacles",
+        "spectacles": "spectacles",
+        "tattoo": "tattoo"
+    }
+
+    requested_attribute = None
+
+    for keyword, attribute in attribute_map.items():
+        if keyword in raw_query:
+            requested_attribute = attribute
+            break
+
+    # Remove common words
+    stop_words = {
+        "person", "people", "man", "woman", "guy",
+        "with", "wearing", "a", "an", "the",
+        "carrying", "shirt", "pant", "pants",
+        "hair", "mask", "bag", "glasses",
+        "spectacles", "tattoo", "color"
+    }
+
+    query_tokens = [
+        word for word in raw_query.split()
+        if word not in stop_words
+    ]
+
     for log in detection_logs:
         attr = log["attributes"]
-        searchable_text = f"shirt:{attr.get('shirt_color')} pant:{attr.get('pant_color')} hair:{attr.get('hair_color')} mask:{attr.get('mask')} maskcolor:{attr.get('mask_color')} bag:{attr.get('accessory')}".lower()
-        
-        if query_tokens and any(token in searchable_text for token in query_tokens):
+
+        shirt = str(attr.get("shirt_color", "")).lower()
+        pant = str(attr.get("pant_color", "")).lower()
+        hair = str(attr.get("hair_color", "")).lower()
+        mask = str(attr.get("mask", "")).lower()
+        accessory = str(attr.get("accessory", "")).lower()
+
+        # If an attribute was explicitly mentioned,
+        # search only inside that attribute.
+        if requested_attribute == "shirt_color":
+            searchable_text = shirt
+
+        elif requested_attribute == "pant_color":
+            searchable_text = pant
+
+        elif requested_attribute == "hair_color":
+            searchable_text = hair
+
+        elif requested_attribute == "mask":
+            searchable_text = mask
+
+        elif requested_attribute == "accessory":
+            searchable_text = accessory
+
+        elif requested_attribute == "spectacles":
+            searchable_text = str(attr.get("spectacles", "")).lower()
+
+        elif requested_attribute == "tattoo":
+            searchable_text = str(attr.get("tattoo", "")).lower()
+
+        else:
+            searchable_text = (
+                f"{shirt} {pant} {hair} {mask} {accessory}"
+            )
+
+        if query_tokens and all(
+            token in searchable_text
+            for token in query_tokens
+        ):
             matches.append({
                 "timestamp": f"{log['timestamp']}s",
-                "person_id": log["track_id"],
+                "person_id": log["person_id"],
                 "shirt": attr.get("shirt_color"),
                 "pant": attr.get("pant_color"),
                 "hair": attr.get("hair_color"),
@@ -66,8 +165,15 @@ def search_person():
                 "mask": attr.get("mask")
             })
 
-    unique_matches = list({m['person_id']: m for m in matches}.values())
-    return jsonify({"query": raw_query, "results": unique_matches})
+    unique_matches = list({
+        m["person_id"]: m
+        for m in matches
+    }.values())
+
+    return jsonify({
+        "query": raw_query,
+        "results": unique_matches
+    })
 
 # --- DYNAMIC ALERTS ENDPOINT ---
 @app.route('/api/alerts', methods=['GET'])
@@ -92,11 +198,16 @@ def get_alerts():
         if triggered_reasons:
             alerts.append({
                 "timestamp": f"{log['timestamp']}s",
+                "person_id": log["person_id"],
                 "track_id": log["track_id"],
                 "reason": ", ".join(triggered_reasons)
             })
             
-    unique_alerts = list({(a['track_id'], a['timestamp']): a for a in alerts}.values())
+    unique_alerts = list({
+        (a['person_id'], a['reason']): a
+        for a in alerts
+    }.values())
+
     return jsonify({"alerts": unique_alerts})
 
 def generate_video_stream(video_path):
@@ -117,6 +228,8 @@ def generate_video_stream(video_path):
             detection_logs.append({
                 "timestamp": timestamp_sec,
                 "track_id": t["track_id"],
+                "person_id": t["person_id"],
+                "reid_similarity": t["reid_similarity"],
                 "attributes": t
             })
 

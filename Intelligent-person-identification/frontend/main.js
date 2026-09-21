@@ -1,4 +1,39 @@
 const API_BASE = "http://127.0.0.1:5000/api";
+// Target Person Selection
+document.getElementById('targetUploadBtn').addEventListener('click', async () => {
+    const fileInput = document.getElementById('targetImageInput');
+    const status = document.getElementById('targetStatus');
+
+    if (!fileInput.files[0]) {
+        status.textContent = "Please select a target image.";
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('image', fileInput.files[0]);
+
+    status.textContent = "Setting target...";
+
+    try {
+        const res = await fetch(`${API_BASE}/target`, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await res.json();
+
+        if (data.status === 'success') {
+            status.textContent =
+                `Target set: ${data.target_id}`;
+        } else {
+            status.textContent =
+                data.error || "Failed to set target.";
+        }
+
+    } catch (error) {
+        status.textContent = "Server connection failed.";
+    }
+});
 
 // 1. Upload Video
 document.getElementById('uploadBtn').addEventListener('click', async () => {
@@ -75,7 +110,7 @@ setInterval(async () => {
             alertBox.innerHTML += `
                 <div class="alert-card">
                     ⚠️ <b>ALERT [${alert.timestamp}]</b><br>
-                    ID #${alert.track_id}: ${alert.reason}
+                    Track #${alert.track_id} | Person ID: ${alert.person_id}: ${alert.reason}
                 </div>`;
         });
     } else {
